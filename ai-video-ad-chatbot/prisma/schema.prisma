@@ -1,0 +1,64 @@
+// Prisma schema for the AI Video Ad Chatbot
+// Run: npx prisma migrate dev --name init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum JobStatus {
+  PENDING
+  SCRIPTING
+  GENERATING_IMAGES
+  GENERATING_VIDEO
+  ADDING_AUDIO
+  STITCHING
+  DONE
+  FAILED
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  createdAt DateTime  @default(now())
+  projects  Project[]
+}
+
+// One "project" = one ad request from the user
+model Project {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  prompt        String   // raw user prompt, e.g. "Create a 30-second Instagram advert..."
+  durationSecs  Int      @default(30)
+  aspectRatio   String   @default("9:16") // Instagram/TikTok default
+  platform      String   @default("instagram") // tiktok | instagram | youtube
+  style         String   @default("ugc") // ugc | cinematic | product
+  productImages Json?    // string[] of uploaded product image URLs
+  status        JobStatus @default(PENDING)
+  script        Json?    // structured storyboard, see lib/pipeline/types.ts
+  finalVideoUrl String?
+  errorMessage  String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  scenes        Scene[]
+}
+
+// Each scene/shot in the storyboard
+model Scene {
+  id           String   @id @default(cuid())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id])
+  order        Int
+  description  String   // scene description / shot direction
+  imagePrompt  String?  // prompt sent to image-gen API
+  videoPrompt  String?  // prompt sent to video-gen API
+  imageUrl     String?
+  clipUrl      String?  // generated video clip for this scene
+  durationSecs Float    @default(3)
+  createdAt    DateTime @default(now())
+}
