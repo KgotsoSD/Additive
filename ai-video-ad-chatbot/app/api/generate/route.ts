@@ -1,15 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient, JobStatus } from "@prisma/client";
-import { runPipeline } from "@/lib/pipeline/orchestrator";
+import { JobStatus } from "@prisma/client";
+import { prisma } from "@/lib/db";
+import { generationQueue, hasLiveWorker, isQueueConfigured } from "@/lib/queue";
 import type { AdPlatform, AdStyle } from "@/lib/pipeline/types";
-
-const prisma = new PrismaClient();
 
 const PLATFORMS = new Set(["tiktok", "instagram", "youtube"]);
 const STYLES = new Set(["ugc", "cinematic", "product"]);
 
 export async function POST(req: NextRequest) {
   try {
+    if (!isQueueConfigured()) {
+      return NextResponse.json(
+        { error: "Generation queue is unavailable. Configure REDIS_URL and start npm run worker." },
+        { status: 503 }
+      );
+    }
+    if (!(await hasLiveWorker())) {
+      return NextResponse.json(
+        { error: "Generation worker is offline. Start `npm run worker`, wait for its listening message, then retry." },
+        { status: 503 }
+      );
+    }
     let body: Record<string, unknown>;
     try {
       body = await req.json();
@@ -62,48 +73,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Fire-and-forget pipeline; never let this reject the HTTP response
-    void runPipeline({
-      prompt,
-      projectId: project.id,
-      durationSecs: Number(durationSecs) || 30,
-      platform: safePlatform as AdPlatform,
-      style: safeStyle as AdStyle,
-      productImages: images,
-      onProgress: async (step, data) => {
-        const current = await prisma.project.findUnique({
-          where: { id: project.id },
-          select: { status: true },
-        });
-        if (current?.status === JobStatus.DONE || current?.status === JobStatus.FAILED) {
-          return;
-        }
-        await prisma.project.update({
-          where: { id: project.id },
-          data: {
-            status: step as JobStatus,
-            ...(data?.script ? { script: data.script as object } : {}),
-          },
-        });
-      },
-    })
-      .then(async (result) => {
-        await prisma.project.update({
-          where: { id: project.id },
-          data: {
-            status: JobStatus.DONE,
-            finalVideoUrl: result.finalVideoUrl,
-            script: result.storyboard as object,
-          },
-        });
-      })
-      .catch(async (err) => {
-        console.error("[pipeline]", err);
-        await prisma.project.update({
-          where: { id: project.id },
-          data: { status: JobStatus.FAILED, errorMessage: String(err?.message ?? err) },
-        });
-      });
+    await generationQueue.add("generate", { projectId: project.id }, { jobId: project.id });
 
     return NextResponse.json({ projectId: project.id, status: project.status });
   } catch (err) {

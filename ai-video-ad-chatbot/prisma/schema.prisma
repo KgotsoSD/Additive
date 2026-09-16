@@ -46,6 +46,24 @@ model Project {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   scenes        Scene[]
+  usageRecords  UsageRecord[]
+}
+
+// Append-only provider usage ledger. Cost is a Decimal so billing totals do
+// not accumulate floating-point rounding errors.
+model UsageRecord {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  provider  String
+  operation String
+  quantity  Float
+  unit      String
+  costUsd   Decimal  @db.Decimal(12, 6)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([projectId, createdAt])
 }
 
 // Each scene/shot in the storyboard

@@ -12,7 +12,7 @@ const H = 1280;
 
 /**
  * Fast local preview stitch:
- * - Fit full photo (pad, no blur/crop zoom)
+ * - Turn each photo into a moving Ken Burns clip (slow camera push)
  * - Encode clips in parallel
  * - 720x1280 @ 24fps ultrafast
  * - Mix music with stream copy for video
@@ -27,7 +27,9 @@ export async function stitchFinalVideo(
   const uploadDir = path.join(process.cwd(), "public", "uploads");
   await mkdir(uploadDir, { recursive: true });
 
-  // Cap scene hold time so long briefs don't make stitch crawl
+  // Preserve the storyboard duration. A single uploaded product photo is
+  // still a complete scene, so silently capping it at 3.5s produced a tiny
+  // "30-second" final video.
   const clipPaths = await Promise.all(
     sorted.map(async (scene, i) => {
       const imagePath = await resolveImageToFile(
@@ -36,7 +38,7 @@ export async function stitchFinalVideo(
         i
       );
       const clipPath = path.join(workDir, `clip-${i}.mp4`);
-      const duration = Math.min(3.5, Math.max(1.5, Number(scene.durationSecs) || 2.5));
+      const duration = Math.min(60, Math.max(1.5, Number(scene.durationSecs) || 2.5));
       await imageToClip(imagePath, clipPath, duration);
       return clipPath;
     })
@@ -80,7 +82,7 @@ export async function stitchFinalVideo(
       "-i",
       musicPath,
       "-filter_complex",
-      "[1:a]volume=0.32,afade=t=in:st=0:d=0.4[a]",
+      "[1:a]volume=0.65,afade=t=in:st=0:d=0.4[a]",
       "-map",
       "0:v",
       "-map",
@@ -191,8 +193,17 @@ async function resolveImageToFile(url: string, destBase: string, index: number):
   }
 }
 
-/** Fit full photo on 9:16 with dark letterbox — no blur (blur was the slow part). */
+/**
+ * Creates an actual moving video clip from one uploaded image. The gentle
+ * push-in is deliberately local and deterministic, so previews work without
+ * a paid image-to-video API. A provider can replace this with generative
+ * motion later, but it must return a real clip URL rather than a placeholder.
+ */
 async function imageToClip(imagePath: string, outputPath: string, durationSecs: number) {
+  const totalFrames = Math.max(1, Math.round(durationSecs * 24));
+  // Keep the move visible for the whole scene instead of finishing in the
+  // first few seconds and holding a static frame for the remainder.
+  const zoomPerFrame = (0.22 / totalFrames).toFixed(7);
   await runFfmpeg([
     "-y",
     "-loop",
@@ -202,7 +213,9 @@ async function imageToClip(imagePath: string, outputPath: string, durationSecs: 
     "-i",
     imagePath,
     "-vf",
-    `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:color=0x111418,setsar=1,format=yuv420p`,
+    // Start slightly oversize, then increase the camera scale by 22% across
+    // the scene. `d=1` advances the animation on every output frame.
+    `scale=900:1600:force_original_aspect_ratio=increase,crop=900:1600:(in_w-900)/2:(in_h-1600)/2,zoompan=z='min(max(zoom\,pzoom)+${zoomPerFrame}\,1.22)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s=${W}x${H}:fps=24,setsar=1,format=yuv420p`,
     "-t",
     String(durationSecs),
     "-r",

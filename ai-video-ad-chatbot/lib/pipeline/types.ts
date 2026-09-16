@@ -25,6 +25,16 @@ export interface PipelineResult {
   scenes: GeneratedScene[];
 }
 
+/** One billable (or mocked) operation, persisted by the project runner. */
+export interface UsageEvent {
+  provider: string;
+  operation: string;
+  quantity: number;
+  unit: string;
+  costUsd: number;
+  metadata?: Record<string, unknown>;
+}
+
 export type AdPlatform = "tiktok" | "instagram" | "youtube";
 export type AdStyle = "ugc" | "cinematic" | "product";
 
@@ -39,4 +49,5 @@ export interface PipelineOptions {
     step: string,
     data?: { script?: Storyboard }
   ) => void | Promise<void>;
+  onUsage?: (usage: UsageEvent) => void | Promise<void>;
 }

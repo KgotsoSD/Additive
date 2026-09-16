@@ -1,9 +1,13 @@
 # AI Video Ad Chatbot — MVP skeleton
 
 Prompt in, finished video out. This skeleton runs end-to-end **right now**
-with every AI call mocked (placeholder images/clips/audio), so you can wire
-the UI → API → pipeline → DB flow together before spending money on any
-generation API.
+with mocked AI providers and a local FFmpeg renderer, so you can wire the
+UI → API → pipeline → DB flow together before spending money on a generation
+API.
+
+Without an image-to-video provider, uploaded images are rendered as local
+moving clips with a subtle Ken Burns push-in. This is genuine video motion,
+but not AI-generated movement inside the product photo.
 
 ## Pipeline
 
@@ -31,9 +35,8 @@ npm run dev
 ```
 
 Open http://localhost:3000, type a prompt, hit Generate. You'll see status
-move through PENDING → SCRIPTING → GENERATING_IMAGES → ... → DONE, and a
-(broken, placeholder-URL) video element at the end — that's expected until
-real storage/generation APIs are wired in.
+move through PENDING → SCRIPTING → GENERATING_IMAGES → ... → DONE, then a
+locally rendered MP4 preview.
 
 ## Wiring in real providers (in order of "do this first")
 
@@ -52,19 +55,34 @@ real storage/generation APIs are wired in.
    voiceover is the common choice; for music, a curated royalty-free
    library is simpler and cheaper than generating music.
 
-## Important next step: real job queue
+## Job queue and worker
 
-`app/api/generate/route.ts` currently fires the pipeline off in the same
-process and lets the client poll for status. That's fine for local dev but
-will die the moment you deploy to a serverless platform (Vercel functions
-time out; the process won't survive to finish a multi-minute video job).
-Before going further:
+Generation requests are now durable BullMQ jobs. The API creates the project,
+queues its id, and returns immediately; the long-lived worker runs the
+pipeline and records progress in Postgres. Run Redis plus these two processes:
 
-- Add **BullMQ + Redis** (already in `package.json`).
-- `POST /api/generate` should only enqueue a job and return immediately.
-- Run a separate long-lived worker process (e.g. on Railway/Fly/a small VM)
-  that pulls jobs off the queue and calls `runPipeline`.
-- Keep `GET /api/jobs/[id]` as-is — it just reads status from Postgres.
+```bash
+npx prisma migrate deploy
+npx prisma generate
+npm run dev
+# in another terminal
+npm run worker
+```
+
+Set `REDIS_URL` and deploy the worker to a long-lived service (Railway, Fly,
+or a VM), not a serverless request function. Jobs retry up to three times;
+set `WORKER_CONCURRENCY=1` initially to control video-provider spend.
+The API checks a worker heartbeat before it accepts a generation; if the
+worker is offline it returns a clear 503 error instead of leaving the project
+stuck at `PENDING`.
+
+## Usage tracking
+
+Each pipeline stage writes an append-only `UsageRecord` row, including its
+provider, operation, quantity, unit, and USD cost. Mock/local operations are
+recorded at $0. When wiring a real provider, pass its actual billed price into
+the existing `onUsage` callback in `lib/pipeline/orchestrator.ts`; this keeps
+project-level cost reporting independent of the provider you choose.
 
 ## Auth
 
@@ -74,7 +92,6 @@ Clerk, Auth.js, or Supabase Auth and pass the real signed-in user's id.
 ## What's NOT in this skeleton yet
 
 - Real image/video/voice provider integrations (all mocked, see above)
-- The BullMQ worker process itself (dependency is included, worker isn't written)
+- Generative image-to-video motion (local motion clips are included)
 - Auth
 - Any UI polish / storyboard preview / editing before final render
-- Cost/usage tracking per generation (video-gen APIs are the expensive part)

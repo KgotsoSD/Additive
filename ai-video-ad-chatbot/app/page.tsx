@@ -391,7 +391,6 @@ export default function Home() {
 
     setBusy(true);
     setInput("");
-    setMobilePane("board");
 
     try {
       const uploaded = await uploadAssets(stagedAssets);
@@ -480,10 +479,10 @@ export default function Home() {
           const finished =
             status === "DONE" ||
             status === "FAILED" ||
-            (Boolean(job.finalVideoUrl) && status !== "FAILED");
+            Boolean(job.finalVideoUrl);
 
           if (finished) {
-            if (status !== "FAILED" && job.finalVideoUrl) {
+            if (job.finalVideoUrl) {
               updateAssistant(threadId!, assistantId, {
                 status: "DONE",
                 text: assistantCopy("DONE", jobImages.length > 0),
@@ -680,7 +679,7 @@ export default function Home() {
           </button>
         </div>
 
-        <div className="chat-scroll" hidden={mobilePane === "board"}>
+        <div className="chat-scroll">
           {messages.length === 0 ? (
             <section className="empty">
               <div className="mark" aria-hidden />
@@ -743,7 +742,7 @@ export default function Home() {
           )}
         </div>
 
-        <div className="composer-wrap" hidden={mobilePane === "board"}>
+        <div className="composer-wrap">
           {assets.length > 0 && (
             <div className="asset-tray">
               {assets.map((a) => (

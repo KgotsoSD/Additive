@@ -19,7 +19,7 @@ export async function generateAudio(
   const uploadDir = path.join(process.cwd(), "public", "uploads");
   await mkdir(uploadDir, { recursive: true });
 
-  const duration = Math.max(4, Math.min(Number(storyboard.totalDurationSecs) || 30, 20));
+  const duration = Math.max(4, Math.min(Number(storyboard.totalDurationSecs) || 30, 60));
   const musicName = `${projectId}-music.mp3`;
   const musicPath = path.join(uploadDir, musicName);
 
@@ -38,7 +38,7 @@ export async function generateAudio(
     "-i",
     `sine=frequency=${f2}:sample_rate=44100:duration=${duration}`,
     "-filter_complex",
-    `[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2,volume=0.28,afade=t=in:st=0:d=0.8,afade=t=out:st=${Math.max(0.5, duration - 1.2)}:d=1.2`,
+    `[0:a][1:a]amix=inputs=2:duration=longest:dropout_transition=2,volume=0.5,afade=t=in:st=0:d=0.8,afade=t=out:st=${Math.max(0.5, duration - 1.2)}:d=1.2`,
     "-t",
     String(duration),
     "-c:a",

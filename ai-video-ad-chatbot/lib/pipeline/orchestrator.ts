@@ -18,6 +18,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     style = "ugc",
     productImages = [],
     onProgress,
+    onUsage,
   } = options;
 
   const report = async (step: string, data?: { script?: PipelineResult["storyboard"] }) => {
@@ -31,6 +32,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     style,
     productImageCount: productImages.length,
   });
+  await onUsage?.({ provider: process.env.OPENAI_API_KEY ? "openai" : "mock", operation: "storyboard", quantity: 1, unit: "request", costUsd: 0 });
 
   await report("GENERATING_IMAGES", { script: storyboard });
   const withImages = await Promise.all(
@@ -39,6 +41,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       imageUrl: await generateSceneImage(scene, projectId, productImages),
     }))
   );
+  await onUsage?.({ provider: process.env.IMAGE_GEN_API_KEY ? "image-provider" : "mock", operation: "scene-image", quantity: withImages.length, unit: "image", costUsd: 0 });
 
   await report("GENERATING_VIDEO");
   const scenes: GeneratedScene[] = await Promise.all(
@@ -47,9 +50,11 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       clipUrl: await generateSceneClip(scene, scene.imageUrl, projectId),
     }))
   );
+  await onUsage?.({ provider: process.env.VIDEO_GEN_API_KEY ? "video-provider" : "mock", operation: "scene-video", quantity: scenes.reduce((total, scene) => total + scene.durationSecs, 0), unit: "second", costUsd: 0 });
 
   await report("ADDING_AUDIO");
   const audio = await generateAudio(storyboard, projectId, style);
+  await onUsage?.({ provider: process.env.VOICE_GEN_API_KEY ? "voice-provider" : "local-ffmpeg", operation: "audio", quantity: storyboard.totalDurationSecs, unit: "second", costUsd: 0 });
 
   await report("STITCHING");
   const finalVideoUrl = await stitchFinalVideo(scenes, audio, projectId);
